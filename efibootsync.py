@@ -120,7 +120,11 @@ def main() -> None:
                             initrd_options = " ".join(a[1:])
                     except Exception as e:
                         print(f"ERROR {e}", line)
-                new_boot_entries.append(dict(title=title, efistub=efistub, initrds=initrds, options=initrd_options))
+                new_boot_entries.append(dict(default=entry.name.replace(".conf", "") == default,
+                                             title=title,
+                                             efistub=efistub,
+                                             initrds=initrds,
+                                             options=initrd_options))
                 if not default:
                     default = title
         new_boot_entries.sort(key=lambda x: x.get("title").lower())
@@ -139,7 +143,7 @@ def main() -> None:
                 continue
             if ':' in entry:
                 continue
-            entry_id = re.sub('[^0-9]', '', entry)
+            entry_id = entry.replace('Boot', '').replace('*', '')
             boot_entries[entry_id] = label
             boot_labels[label] = entry_id
         for nbe in new_boot_entries:
@@ -152,10 +156,11 @@ def main() -> None:
             if existing_label:
                 print(f"Label exists {title}", existing_label)
                 c = f"""sudo efibootmgr --delete-bootnum -b {existing_label}"""
-                print(c)
-            create = "--create" if title == default else "--create-only"
+                run(c)
+            create = "--create" if nbe.get("default") else "--create-only"
             c = f"""sudo efibootmgr --disk /dev/{boot_device} --part {part_number} {create} --label "{title}" --loader {efistub} --unicode '{options} {initrd}' --verbose"""
             print(c)
+            run(c)
         # for entry_id in sorted(boot_entries.keys()):
         #     print(entry_id)
 
