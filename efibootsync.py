@@ -4,7 +4,7 @@ Syncs systemd-boot configuration to efi boot variables so the EFI boot can bypas
 """
 import json
 import os
-import shlex
+import re
 import subprocess
 from typing import List
 
@@ -52,7 +52,7 @@ def get_mounts():
 
     """
     try:
-        sts, stdout = run("lsblk -J --output=MOUNTPOINT,LABEL,NAME")
+        sts, stdout = run("lsblk -J --output=MOUNTPOINT,LABEL,NAME,PKNAME,KNAME")
     except Exception as e:
         print(e)
         return
@@ -62,9 +62,10 @@ def get_mounts():
             mountpoint = mp.get("mountpoint") if mp else None
             if not mountpoint:
                 continue
-            device = mp.get('name')
+            partition = mp.get('kname')
             label = mp.get("label")
-            h[mountpoint] = {'device': device, 'label': label}
+            device = mp.get("pkname")
+            h[mountpoint] = {'partition': partition, 'device': device, 'label': label, 'mountpoint': mountpoint}
     return h
 
 
@@ -84,8 +85,16 @@ def main() -> None:
         except:
             pass
     print(f"Default={default}")
-    print(get_mounts())
-    with os.scandir('/boot/loader/entries') as it:
+    h = get_mounts()
+    boot_mount = h.get("/boot") or h.get('/efi')
+    if not boot_mount:
+        print("Cannot determine boot mount")
+        os._exit(-1)
+    boot_directory = boot_mount['mountpoint']
+    boot_partition = boot_mount['partition']
+    boot_device = boot_mount['device']
+    part_number = re.sub('[^0-9]', '', boot_partition.replace(boot_device, ''))
+    with os.scandir(f'{boot_directory}/loader/entries') as it:
         for entry in it:
             if entry.name.endswith('.conf') and entry.is_file():
                 title = entry.name
