@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+from collections import OrderedDict
 from typing import List
 
 
@@ -94,6 +95,7 @@ def main() -> None:
     boot_partition = boot_mount['partition']
     boot_device = boot_mount['device']
     part_number = re.sub('[^0-9]', '', boot_partition.replace(boot_device, ''))
+    new_boot_entries = []
     with os.scandir(f'{boot_directory}/loader/entries') as it:
         for entry in it:
             if entry.name.endswith('.conf') and entry.is_file():
@@ -108,24 +110,54 @@ def main() -> None:
                             continue
                         command = a[0]
                         value = a[1]
-                        # print(f"\t\t{command} {value}")
                         if command in ("linux", "efi"):
                             efistub = value
                         elif command == "initrd":
                             initrds.append(value)
                         elif command == "title":
-                            title = value
+                            title = " ".join(a[1:])
                         elif command == "options":
-                            initrd_options = " ".join(a[2:])
+                            initrd_options = " ".join(a[1:])
                     except Exception as e:
                         print(f"ERROR {e}", line)
-                print(f"\ttitle={title}")
-                print(f"\t\tefistub={efistub}")
-                print(f"\t\tinitrd {' initrd='.join(initrds)}")
-                print(f"\t\toptions={initrd_options}")
-                print(" ")
-                # bootstr =
-        print(run('efibootmgr'))
+                new_boot_entries.append(dict(title=title, efistub=efistub, initrds=initrds, options=initrd_options))
+                if not default:
+                    default = title
+        new_boot_entries.sort(key=lambda x: x.get("title").lower())
+        # for e in new_boot_entries:
+        #     print(e)
+        status_code, s = run('efibootmgr')
+        if status_code:
+            print("Error getting current boot entries")
+            os._exit(-1)
+        boot_entries = {}
+        boot_labels = {}
+        for line in s.split('\n'):
+            try:
+                entry, label = line.split(maxsplit=1)
+            except:
+                continue
+            if ':' in entry:
+                continue
+            entry_id = re.sub('[^0-9]', '', entry)
+            boot_entries[entry_id] = label
+            boot_labels[label] = entry_id
+        for nbe in new_boot_entries:
+            title = nbe["title"]
+            efistub = nbe['efistub']
+            options = nbe['options']
+            initrds = nbe['initrds']
+            initrd = " ".join([f"initrd={s}" for s in initrds]).strip()
+            existing_label = boot_labels.get(title)
+            if existing_label:
+                print(f"Label exists {title}", existing_label)
+                c = f"""sudo efibootmgr --delete-bootnum -b {existing_label}"""
+                print(c)
+            create = "--create" if title == default else "--create-only"
+            c = f"""sudo efibootmgr --disk /dev/{boot_device} --part {part_number} {create} --label "{title}" --loader {efistub} --unicode '{options} {initrd}' --verbose"""
+            print(c)
+        # for entry_id in sorted(boot_entries.keys()):
+        #     print(entry_id)
 
 if __name__ == '__main__':
     main()
