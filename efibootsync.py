@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-from collections import OrderedDict
 from typing import List
 
 
@@ -47,7 +46,7 @@ def run(cmd: str):
 
 def get_mounts():
     """
-    Get mounted directories.
+    Get mounted directories and associated information
 
     Returns:
 
@@ -77,8 +76,17 @@ def main() -> None:
     Returns:
 
     """
+    h = get_mounts()
+    boot_mount = h.get("/boot") or h.get('/efi')
+    boot_directory = boot_mount['mountpoint']
+    boot_partition = boot_mount['partition']
+    boot_device = boot_mount['device']
+    part_number = re.sub('[^0-9]', '', boot_partition.replace(boot_device, ''))
+    if not boot_mount:
+        print("Cannot determine boot mount")
+        os._exit(-1)
     default = None
-    for line in open("/boot/loader/loader.conf"):
+    for line in open(f"{boot_directory}/loader/loader.conf"):
         try:
             command, value = split_and_strip(line)
             if command == "default":
@@ -86,15 +94,6 @@ def main() -> None:
         except:
             pass
     print(f"Default={default}")
-    h = get_mounts()
-    boot_mount = h.get("/boot") or h.get('/efi')
-    if not boot_mount:
-        print("Cannot determine boot mount")
-        os._exit(-1)
-    boot_directory = boot_mount['mountpoint']
-    boot_partition = boot_mount['partition']
-    boot_device = boot_mount['device']
-    part_number = re.sub('[^0-9]', '', boot_partition.replace(boot_device, ''))
     new_boot_entries = []
     with os.scandir(f'{boot_directory}/loader/entries') as it:
         for entry in it:
@@ -161,8 +160,7 @@ def main() -> None:
             c = f"""sudo efibootmgr --disk /dev/{boot_device} --part {part_number} {create} --label "{title}" --loader {efistub} --unicode '{options} {initrd}' --verbose"""
             print(c)
             run(c)
-        # for entry_id in sorted(boot_entries.keys()):
-        #     print(entry_id)
+
 
 if __name__ == '__main__':
     main()
